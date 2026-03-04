@@ -9,7 +9,8 @@ Overview
 --------
 This script performs anomaly scoring using k-Nearest Neighbor distance
 as the anomaly score:
-    score(x) = distance to the k-th nearest neighbor (Euclidean or cosine)
+    score(x) = mean distance to the k nearest neighbors (Euclidean or cosine)
+              (training queries exclude self-match)
 
 Scoring is conducted independently per channel, followed by
 channel-level normalization and score averaging.
@@ -85,7 +86,7 @@ For each channel:
     1) (Optional) Standardization using StandardScaler
        fitted on training NORMAL samples only.
     2) Fit kNN model.
-    3) Compute k-th nearest neighbor distance.
+    3) Compute mean distance of k nearest neighbors (exclude self for train).
     4) Normalize per-channel scores using:
          - quantile (ECDF-based percentile mapping), or
          - zscore  (standard score + min-max to [0,1])
@@ -286,12 +287,40 @@ def fit_knn(Xtr: np.ndarray, metric: str = "l2") -> NearestNeighbors:
     return nn
 
 
-def knn_kth_distance(nn: NearestNeighbors, Xref: np.ndarray, Xq: np.ndarray, k: int) -> np.ndarray:
+def knn_kmean_distance(
+    nn: NearestNeighbors,
+    Xref: np.ndarray,
+    Xq: np.ndarray,
+    k: int,
+    exclude_self: bool = False
+) -> np.ndarray:
+    """
+    Return mean distance to k nearest neighbors.
+    If exclude_self is True, drop the closest neighbor (self) before averaging.
+    """
     k = max(1, int(k))
-    n = min(k, max(1, len(Xref)))
-    dist, _ = nn.kneighbors(Xq, n_neighbors=n, return_distance=True)
-    idx = min(n - 1, dist.shape[1] - 1)
-    return dist[:, idx]
+    n_ref = int(len(Xref))
+    if n_ref <= 0:
+        raise RuntimeError("KNN reference set is empty.")
+
+    if exclude_self:
+        if n_ref <= 1:
+            raise RuntimeError("Need at least 2 reference samples to exclude self.")
+        k_eff = min(k, n_ref - 1)
+        n_neighbors = min(k_eff + 1, n_ref)
+    else:
+        k_eff = min(k, n_ref)
+        n_neighbors = k_eff
+
+    dist, _ = nn.kneighbors(Xq, n_neighbors=n_neighbors, return_distance=True)
+    if exclude_self:
+        if dist.shape[1] <= 1:
+            raise RuntimeError("Not enough neighbors after excluding self.")
+        dist = dist[:, 1:]
+
+    if dist.shape[1] < k_eff:
+        k_eff = dist.shape[1]
+    return dist[:, :k_eff].mean(axis=1)
 
 
 # ----------------- quantile mapping -----------------
@@ -347,8 +376,8 @@ def mean_score_over_channels(
             Xte = Xte_raw.astype(np.float32, copy=False)
 
         nn = fit_knn(Xtr, metric=metric)
-        dist_tr = knn_kth_distance(nn, Xtr, Xtr, k=k)
-        dist_te = knn_kth_distance(nn, Xtr, Xte, k=k)
+        dist_tr = knn_kmean_distance(nn, Xtr, Xtr, k=k, exclude_self=True)
+        dist_te = knn_kmean_distance(nn, Xtr, Xte, k=k, exclude_self=False)
 
         if fusion_norm == 'quantile':
             di_norm = ecdf_quantile(dist_tr, dist_te)
@@ -622,6 +651,5 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
 
