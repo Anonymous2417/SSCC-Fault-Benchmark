@@ -11,7 +11,7 @@ pipeline on 7-channel features. Each channel is processed independently:
 
   1) (Optional) Standardize features with StandardScaler (fit on TRAIN only).
   2) Query k-nearest neighbors in TRAIN for each TEST sample.
-  3) Convert neighbor labels to per-class probabilities (hard vote or distance-weighted vote).
+  3) Convert neighbor labels to per-class probabilities (distance-weighted vote).
 
 It then produces predictions for multiple **views** by averaging per-channel probabilities:
   - audio_mean: channels [0,1,2]
