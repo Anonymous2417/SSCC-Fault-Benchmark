@@ -3,7 +3,7 @@
 This repository provides a benchmark suite for the **SSCC dataset**, focusing on multimodal representation learning and channel-wise kNN baselines.
 
 Detailed information about the SSCC dataset can be found at:  
-https://anonymous2417.github.io/SSCC-Dataset/
+https://yucongzh.github.io/SSCC-Dataset/
 
 # Overview
 
